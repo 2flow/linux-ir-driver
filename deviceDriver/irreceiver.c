@@ -118,7 +118,7 @@ inline static void next_if_timing_in_range(uint64_t time_diff,
 static void ir_pin_rising(uint64_t time_diff, struct ir_device_info * dev_info){
 	switch(dev_info->decode_state){
 		case STATE_START_1:{
-			next_if_timing_in_range(time_diff, 8000000, 10000000, STATE_START_2, dev_info);
+			next_if_timing_in_range(time_diff, 4000000, 10000000, STATE_START_2, dev_info);
 			break;
 		}
 		case STATE_BIT_LOW:{
@@ -155,7 +155,7 @@ static void ir_pin_falling(uint64_t time_diff, struct ir_device_info * dev_info)
 				// bit zero
 				dev_info->value <<= 1;
 				dev_info->counter ++;
-			}else if(time_diff < 1760000){
+			}else if(time_diff < 1800000){ // was 1760000
 				// bit one
 				dev_info->value <<= 1;
 				dev_info->value |= 0x1;

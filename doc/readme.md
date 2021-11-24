@@ -41,14 +41,3 @@ Install: ```sudo apt-get install libssl-dev```
 ## add to device tree
 IF a new folder is created the KConfig and Makefle need to be added to the parrent.
 
-# install kernel
-```
-KERNEL=kernel7l
-#make bcm2711_defconfig
-sudo make -j4 zImage modules dtbs
-sudo make modules_install
-sudo cp arch/arm/boot/dts/*.dtb /boot/
-sudo cp arch/arm/boot/dts/overlays/*.dtb* /boot/overlays/
-sudo cp arch/arm/boot/zImage /boot/kernel-flow.img 
-# kernel=kernel-flow.img in  /boot/config.txt
-```
