@@ -66,11 +66,15 @@ struct ir_device_info {
 	STATE_TYPE decode_state;
 	unsigned int pin_irq_number_rising;
 	uint64_t last_irq_time;
+	uint64_t last_value_time;
+	uint64_t current_time;
 	uint32_t value;
 	uint16_t counter;
 	bool ir_last_state;
+	uint32_t current_value;
 	uint32_t last_value;
 	struct proc_dir_entry *ir_proc;
+	uint64_t debounce;
 };
 
 
@@ -84,8 +88,8 @@ ssize_t ir_read(struct file *file, char __user *user, size_t size, loff_t *off){
 		return 5;
 	}
 
-	copy_to_user(user, &data->last_value, 4);
-	data->last_value = 0;
+	copy_to_user(user, &data->current_value, 4);
+	data->current_value = 0;
 
 	return 4;
 }
@@ -113,6 +117,18 @@ inline static void next_if_timing_in_range(uint64_t time_diff,
 	}
 }
 
+inline static uint64_t calculate_time_diff(uint64_t from_time, uint64_t until_time){
+	uint64_t time_diff;
+	if(until_time > from_time){
+		time_diff = until_time - from_time;
+	}else{
+		uint64_t zero_time = 0;
+		time_diff = (zero_time - from_time) + until_time;
+	}
+
+	return time_diff;
+}
+
 
 // ***************** interrupt handling ****************
 static void ir_pin_rising(uint64_t time_diff, struct ir_device_info * dev_info){
@@ -123,7 +139,15 @@ static void ir_pin_rising(uint64_t time_diff, struct ir_device_info * dev_info){
 		}
 		case STATE_BIT_LOW:{
 			if((time_diff < 400000) || (dev_info->counter >= 31)){
-				dev_info->last_value = dev_info->value;
+				uint64_t last_value_time_diff = calculate_time_diff(dev_info->last_value_time, dev_info->current_time);
+
+				if (((dev_info->last_value == dev_info->value) && (last_value_time_diff >= dev_info->debounce)) || (dev_info->last_value != dev_info->value)){
+					// set value
+					dev_info->current_value = dev_info->value;
+					dev_info->last_value = dev_info->value;
+					dev_info->last_value_time = dev_info->current_time;
+				}
+
 				dev_info->decode_state = STATE_IDLE;
 			}else if(time_diff < 827000){
 				dev_info->decode_state = STATE_BIT_HIGH;
@@ -182,26 +206,23 @@ static irqreturn_t gpio_irq_falling_handler(int irq,void *dev_id)
 
 
 	// current time to calculate the delta between the edges
-	uint64_t currentTime;
-	currentTime = ktime_get_raw_fast_ns();
+	uint64_t current_time;
+	current_time = ktime_get_raw_fast_ns();
 	// calculate time dif to last edge
 	uint64_t time_diff;
-	if(currentTime > dev_info->last_irq_time){
-		time_diff = currentTime - dev_info->last_irq_time;
-	}else{
-		uint64_t zero_time = 0;
-		time_diff = (zero_time - dev_info->last_irq_time) + currentTime;
-	}
+	time_diff = calculate_time_diff(dev_info->last_irq_time, current_time);
+
+	dev_info->current_time = current_time;
 
 	// process depending on the edge
 	if(current_pin_state && !dev_info->ir_last_state){
 		ir_pin_rising(time_diff, dev_info);
 		
-		dev_info->last_irq_time = currentTime;
+		dev_info->last_irq_time = current_time;
 	}else if(!current_pin_state && dev_info->ir_last_state){
 		ir_pin_falling(time_diff, dev_info);
 		
-		dev_info->last_irq_time = currentTime;
+		dev_info->last_irq_time = current_time;
 	}
 	
 	dev_info->ir_last_state = current_pin_state;
@@ -250,8 +271,10 @@ static int ir_device_probe(struct platform_device *pdev)
 	dev_info->value = 0;
 	dev_info->counter = 0;
 	dev_info->ir_last_state = false;
-	dev_info->last_value = 0;
+	dev_info->current_value = 0;
 	dev_info->ir_proc = NULL;
+	dev_info->last_value_time = 0;
+	dev_info->debounce = 50000000;
 
 
 	// check if gpio pin is available
